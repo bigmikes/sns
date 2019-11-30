@@ -1,0 +1,11 @@
+<!-- forms.html -->
+{{if .Success}}
+    <h1>Thanks for your message!</h1>
+    <b>{{.Result}}</b>
+{{else}}
+    <h1>Contact</h1>
+    <form method="POST">
+        <textarea name="payload"></textarea><br />
+        <input type="submit">
+    </form>
+{{end}}
