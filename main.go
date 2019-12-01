@@ -21,6 +21,7 @@ var (
 	addr   = flag.String("addr", "", "Listen IP address")
 	cert   = flag.String("crt", "", "Certificate file")
 	prvKey = flag.String("key", "", "Private key file")
+	ecCert = flag.String("sign", "", "EC certificate to be used for ECDSA signature")
 )
 
 func main() {
@@ -35,7 +36,10 @@ func main() {
 
 	address := *addr + ":" + *port
 
-	n := notary.NewNotary()
+	n, err := notary.NewNotary(*ecCert)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	s := server.NewHTTPSServer(
 		address,
@@ -61,7 +65,10 @@ func main() {
 		} else {
 			payload := r.FormValue("payload")
 
-			sign := n.SignPayload([]byte(payload))
+			sign, err := n.SignPayload([]byte(payload))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			signX := fmt.Sprintf("%x", sign.Signature)
 
 			tmpl.Execute(w, struct {
@@ -76,8 +83,8 @@ func main() {
 		}
 	})
 	log.Println("Starting the server...")
-	err := s.Start()
-	if err != nil {
+
+	if err := s.Start(); err != nil {
 		log.Fatal(err)
 	}
 	log.Println("Server exited")
