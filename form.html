@@ -1,7 +1,7 @@
 <!-- forms.html -->
 {{if .Success}}
-    <h1>Thanks for your message!</h1>
-    <b>{{.Result}}</b>
+    <b>Timestamp: {{.Timestamp}}</b>
+    <b>Signature: {{.Sign}}</b>
 {{else}}
     <h1>Contact</h1>
     <form method="POST">

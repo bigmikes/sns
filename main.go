@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/bigmikes/sns/notary"
 	"github.com/bigmikes/sns/server"
 )
 
@@ -24,6 +24,7 @@ var (
 )
 
 func main() {
+	log.SetFlags(log.Lshortfile)
 	flag.Parse()
 
 	if *cert == "" || *prvKey == "" {
@@ -34,7 +35,8 @@ func main() {
 
 	address := *addr + ":" + *port
 
-	log.SetFlags(log.Lshortfile)
+	n := notary.NewNotary()
+
 	s := server.NewHTTPSServer(
 		address,
 		*prvKey,
@@ -51,9 +53,6 @@ func main() {
 			},
 		},
 	)
-	s.AddEndpoint("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("This is an example.\n"))
-	})
 
 	tmpl := template.Must(template.ParseFiles("form.html"))
 	s.AddEndpoint("/sign", func(w http.ResponseWriter, r *http.Request) {
@@ -61,14 +60,18 @@ func main() {
 			tmpl.Execute(w, nil)
 		} else {
 			payload := r.FormValue("payload")
-			sha := sha256.Sum256([]byte(payload))
-			result := fmt.Sprintf("%x", sha)
+
+			sign := n.SignPayload([]byte(payload))
+			signX := fmt.Sprintf("%x", sign.Signature)
+
 			tmpl.Execute(w, struct {
-				Success bool
-				Result  string
+				Success   bool
+				Timestamp string
+				Sign      string
 			}{
 				true,
-				result,
+				sign.Ts,
+				signX,
 			})
 		}
 	})
