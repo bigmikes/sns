@@ -6,8 +6,10 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"time"
@@ -17,6 +19,29 @@ type SignedPayload struct {
 	Ts        string
 	Payload   []byte
 	Signature []byte
+}
+
+type SignedPayloadJSON struct {
+	Timestamp string
+	Payload   string
+	Signature string
+}
+
+func (s SignedPayload) MarshalJSON() ([]byte, error) {
+	obj := SignedPayloadJSON{
+		Timestamp: s.Ts,
+		Payload:   string(s.Payload),
+		Signature: fmt.Sprintf("%x", s.Signature),
+	}
+
+	return json.Marshal(obj)
+}
+
+func UnmarshalJSON(b []byte) (SignedPayloadJSON, error) {
+	obj := SignedPayloadJSON{}
+
+	err := json.Unmarshal(b, &obj)
+	return obj, err
 }
 
 type Notary struct {
@@ -46,7 +71,7 @@ func NewNotary(ecCertFile string) (*Notary, error) {
 }
 
 func (n *Notary) SignPayload(p []byte) (SignedPayload, error) {
-	t := time.Now().Format(time.RFC3339Nano)
+	t := time.Now().Format(time.RFC3339)
 	toSign := []byte(t)
 	toSign = append(toSign, p...)
 	hashed := sha256.Sum256(toSign)

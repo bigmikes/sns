@@ -11,17 +11,19 @@ import (
 
 	"github.com/bigmikes/sns/notary"
 	"github.com/bigmikes/sns/server"
+	"github.com/bigmikes/sns/storage"
 )
 
 var errorMessage = `Error: certificate and private key files are required.
 `
 
 var (
-	port   = flag.String("port", "443", "Listen port")
-	addr   = flag.String("addr", "", "Listen IP address")
-	cert   = flag.String("crt", "", "Certificate file")
-	prvKey = flag.String("key", "", "Private key file")
-	ecCert = flag.String("sign", "", "EC certificate to be used for ECDSA signature")
+	port       = flag.String("port", "443", "Listen port")
+	addr       = flag.String("addr", "", "Listen IP address")
+	cert       = flag.String("crt", "", "Certificate file")
+	prvKey     = flag.String("key", "", "Private key file")
+	ecCert     = flag.String("sign", "", "EC certificate to be used for ECDSA signature")
+	signFolder = flag.String("dir", "", "Directory where signatures will be stored")
 )
 
 func main() {
@@ -35,12 +37,6 @@ func main() {
 	}
 
 	address := *addr + ":" + *port
-
-	n, err := notary.NewNotary(*ecCert)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	s := server.NewHTTPSServer(
 		address,
 		*prvKey,
@@ -58,34 +54,73 @@ func main() {
 		},
 	)
 
-	tmpl := template.Must(template.ParseFiles("form.html"))
-	s.AddEndpoint("/sign", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			tmpl.Execute(w, nil)
-		} else {
-			payload := r.FormValue("payload")
+	notSrv, err := notary.NewNotary(*ecCert)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-			sign, err := n.SignPayload([]byte(payload))
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-			}
-			signX := fmt.Sprintf("%x", sign.Signature)
+	storSrv := storage.NewFileStorage(*signFolder)
 
-			tmpl.Execute(w, struct {
-				Success   bool
-				Timestamp string
-				Sign      string
-			}{
-				true,
-				sign.Ts,
-				signX,
-			})
-		}
-	})
+	s.AddEndpoint("/sign", signHandler(notSrv, storSrv))
+	s.AddEndpoint("/list", listHandler(storSrv))
+
 	log.Println("Starting the server...")
-
 	if err := s.Start(); err != nil {
 		log.Fatal(err)
 	}
 	log.Println("Server exited")
+}
+
+func signHandler(n *notary.Notary, s storage.Storage) server.HandlerFunc {
+	tmpl := template.Must(template.ParseFiles("sign.html"))
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			tmpl.Execute(w, nil)
+		} else if r.Method == http.MethodPost {
+			payload := r.FormValue("payload")
+			sign, err := n.SignPayload([]byte(payload))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			body, err := sign.MarshalJSON()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			s.Store(storage.StorageEntry{
+				Title: sign.Ts + ".json",
+				Body:  body,
+			})
+
+		} else {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func listHandler(s storage.Storage) server.HandlerFunc {
+	tmpl := template.Must(template.ParseFiles("list.html"))
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			entries, err := s.List()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			jsonEntries := make([]notary.SignedPayloadJSON, 0, len(entries))
+			for _, entry := range entries {
+				json, err := notary.UnmarshalJSON(entry.Body)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				jsonEntries = append(jsonEntries, json)
+			}
+			render := struct {
+				Entries []notary.SignedPayloadJSON
+			}{
+				jsonEntries,
+			}
+			tmpl.Execute(w, render)
+		} else {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	}
 }
