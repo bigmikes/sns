@@ -63,6 +63,7 @@ func main() {
 
 	s.AddEndpoint("/sign", signHandler(notSrv, storSrv))
 	s.AddEndpoint("/list", listHandler(storSrv))
+	s.AddEndpoint("/view", viewHandler(storSrv))
 
 	log.Println("Starting the server...")
 	if err := s.Start(); err != nil {
@@ -119,6 +120,26 @@ func listHandler(s storage.Storage) server.HandlerFunc {
 				jsonEntries,
 			}
 			tmpl.Execute(w, render)
+		} else {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func viewHandler(s storage.Storage) server.HandlerFunc {
+	tmpl := template.Must(template.ParseFiles("view.html"))
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			title := r.URL.Query().Get("title")
+			entry, err := s.Load(title + ".json")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+			}
+			json, err := notary.UnmarshalJSON(entry.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			tmpl.Execute(w, json)
 		} else {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		}
