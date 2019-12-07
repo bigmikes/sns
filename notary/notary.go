@@ -6,10 +6,10 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"time"
@@ -18,12 +18,14 @@ import (
 type SignedPayload struct {
 	Ts        string
 	Payload   []byte
+	Hash      []byte
 	Signature []byte
 }
 
 type SignedPayloadJSON struct {
 	Timestamp string
 	Payload   string
+	Hash      string
 	Signature string
 }
 
@@ -31,7 +33,8 @@ func (s SignedPayload) MarshalJSON() ([]byte, error) {
 	obj := SignedPayloadJSON{
 		Timestamp: s.Ts,
 		Payload:   string(s.Payload),
-		Signature: fmt.Sprintf("%x", s.Signature),
+		Hash:      hex.EncodeToString(s.Hash),
+		Signature: hex.EncodeToString(s.Signature),
 	}
 
 	return json.Marshal(obj)
@@ -84,6 +87,7 @@ func (n *Notary) SignPayload(p []byte) (SignedPayload, error) {
 	return SignedPayload{
 		Ts:        t,
 		Payload:   p,
+		Hash:      hashed[:],
 		Signature: signature,
 	}, nil
 }

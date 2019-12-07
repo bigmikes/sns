@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"html/template"
@@ -87,11 +88,16 @@ func signHandler(n *notary.Notary, s storage.Storage) server.HandlerFunc {
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
-			s.Store(storage.StorageEntry{
-				Title: sign.Ts + ".json",
+			hash := hex.EncodeToString(sign.Hash)
+			err = s.Store(storage.StorageEntry{
+				Title: hash + ".json",
 				Body:  body,
 			})
-
+			if err != nil {
+				log.Println(err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			http.Redirect(w, r, "/view?hash="+hash, http.StatusFound)
 		} else {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		}
@@ -130,8 +136,8 @@ func viewHandler(s storage.Storage) server.HandlerFunc {
 	tmpl := template.Must(template.ParseFiles("view.html"))
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			title := r.URL.Query().Get("title")
-			entry, err := s.Load(title + ".json")
+			hash := r.URL.Query().Get("hash")
+			entry, err := s.Load(hash + ".json")
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 			}
