@@ -91,3 +91,28 @@ func (n *Notary) SignPayload(p []byte) (SignedPayload, error) {
 		Signature: signature,
 	}, nil
 }
+
+func ValidSignature(pubKey string, payload, signature []byte) (bool, error) {
+	f, err := os.Open(pubKey)
+	if err != nil {
+		return false, err
+	}
+	buf, err := ioutil.ReadAll(f)
+	if err != nil {
+		return false, err
+	}
+	p, _ := pem.Decode(buf)
+	if p == nil {
+		return false, errors.New("no pem block found")
+	}
+	key, err := x509.ParsePKIXPublicKey(p.Bytes)
+	if err != nil {
+		return false, err
+	}
+	hashed := sha256.Sum256(payload)
+	err = rsa.VerifyPKCS1v15(key.(*rsa.PublicKey), crypto.SHA256, hashed[:], signature)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

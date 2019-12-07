@@ -23,7 +23,8 @@ var (
 	addr       = flag.String("addr", "", "Listen IP address")
 	cert       = flag.String("crt", "", "Certificate file")
 	prvKey     = flag.String("key", "", "Private key file")
-	ecCert     = flag.String("sign", "", "EC certificate to be used for ECDSA signature")
+	ecCert     = flag.String("sign", "", "Private key for signature")
+	publicKey  = flag.String("pub", "", "Public key for signature")
 	signFolder = flag.String("dir", "", "Directory where signatures will be stored")
 )
 
@@ -65,6 +66,7 @@ func main() {
 	s.AddEndpoint("/sign", signHandler(notSrv, storSrv))
 	s.AddEndpoint("/list", listHandler(storSrv))
 	s.AddEndpoint("/view", viewHandler(storSrv))
+	s.AddEndpoint("/verify", verifyHandler(*publicKey))
 
 	log.Println("Starting the server...")
 	if err := s.Start(); err != nil {
@@ -146,6 +148,48 @@ func viewHandler(s storage.Storage) server.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 			tmpl.Execute(w, json)
+		} else {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func verifyHandler(pubKey string) server.HandlerFunc {
+	tmpl := template.Must(template.ParseFiles("verify.html"))
+	gettmpl := template.Must(template.ParseFiles("getverify.html"))
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if len(r.URL.Query()) == 0 {
+				err := tmpl.Execute(w, nil)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+			} else {
+				ts := r.URL.Query().Get("timestamp")
+				payload := r.URL.Query().Get("payload")
+				signature := r.URL.Query().Get("signature")
+				log.Printf("Verifying TS=%v, Payload=%v, Signature=%v\n", ts, payload, signature)
+				tsByte := []byte(ts)
+				tsByte = append(tsByte, []byte(payload)...)
+				signatureHex, err := hex.DecodeString(signature)
+				if err != nil {
+					log.Println(err)
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+
+				valid, err := notary.ValidSignature(pubKey, tsByte, signatureHex)
+				err = gettmpl.Execute(w, struct {
+					Valid bool
+					Error string
+				}{
+					valid,
+					fmt.Sprintf("%v", err),
+				})
+				if err != nil {
+					log.Println(err)
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+			}
 		} else {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		}
